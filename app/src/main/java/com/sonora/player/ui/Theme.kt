@@ -4,10 +4,49 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import com.sonora.player.R
 
 val Accent = Color(0xFFFA2D48)
+
+/** Tipografía Inter (similar a la del iPhone), recortada a caracteres latinos para que pese poco. */
+val Inter = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
+
+/** Variante "Display" de Inter para los títulos grandes. */
+val InterDisplay = FontFamily(Font(R.font.inter_display_bold, FontWeight.Bold))
+
+private fun TextStyle.inter() = copy(fontFamily = Inter)
+
+private val SonoraTypography = Typography().let { t ->
+    Typography(
+        displayLarge = t.displayLarge.inter(),
+        displayMedium = t.displayMedium.inter(),
+        displaySmall = t.displaySmall.inter(),
+        headlineLarge = t.headlineLarge.inter(),
+        headlineMedium = t.headlineMedium.inter(),
+        headlineSmall = t.headlineSmall.inter(),
+        titleLarge = t.titleLarge.inter(),
+        titleMedium = t.titleMedium.inter(),
+        titleSmall = t.titleSmall.inter(),
+        bodyLarge = t.bodyLarge.inter(),
+        bodyMedium = t.bodyMedium.inter(),
+        bodySmall = t.bodySmall.inter(),
+        labelLarge = t.labelLarge.inter(),
+        labelMedium = t.labelMedium.inter(),
+        labelSmall = t.labelSmall.inter(),
+    )
+}
 
 private val DarkColors = darkColorScheme(
     primary = Accent,
@@ -47,6 +86,7 @@ private val LightColors = lightColorScheme(
 fun SonoraTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+        typography = SonoraTypography,
         content = content,
     )
 }

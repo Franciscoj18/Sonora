@@ -6,6 +6,10 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -113,6 +117,7 @@ fun SonoraRoot(vm: MainViewModel = viewModel()) {
 
 private val hiddenTabRoutes = setOf("editAlbum/{id}", "editPlaylist/{id}")
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun MainContent(vm: MainViewModel) {
     val nav = rememberNavController()
@@ -131,6 +136,8 @@ private fun MainContent(vm: MainViewModel) {
 
     val push = tween<androidx.compose.ui.unit.IntOffset>(280)
 
+    SharedTransitionLayout(Modifier.fillMaxSize()) {
+    val sharedScope = this
     Box(Modifier.fillMaxSize()) {
         CompositionLocalProvider(LocalBottomInset provides bottomInset) {
             NavHost(
@@ -189,14 +196,22 @@ private fun MainContent(vm: MainViewModel) {
         if (showBars) {
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 if (hasPlayer) {
-                    MiniPlayer(
-                        song = current,
-                        state = state,
-                        onOpen = { vm.showNowPlaying = true },
-                        onToggle = { vm.player.toggle() },
-                        onNext = { vm.player.next() },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-                    )
+                    AnimatedVisibility(
+                        visible = !vm.showNowPlaying,
+                        enter = fadeIn(tween(220, delayMillis = 120)),
+                        exit = fadeOut(tween(120)),
+                    ) {
+                        MiniPlayer(
+                            song = current,
+                            state = state,
+                            sharedScope = sharedScope,
+                            visibilityScope = this,
+                            onOpen = { vm.showNowPlaying = true },
+                            onToggle = { vm.player.toggle() },
+                            onNext = { vm.player.next() },
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                        )
+                    }
                 }
                 TabBar(
                     searchSelected = route == "search",
@@ -216,19 +231,31 @@ private fun MainContent(vm: MainViewModel) {
             enter = slideInVertically(tween(330)) { it },
             exit = slideOutVertically(tween(260)) { it },
         ) {
-            NowPlayingScreen(vm, lib, current, state, onClose = { vm.showNowPlaying = false })
+            NowPlayingScreen(
+                vm = vm,
+                lib = lib,
+                song = current,
+                state = state,
+                sharedScope = sharedScope,
+                visibilityScope = this,
+                onClose = { vm.showNowPlaying = false },
+            )
         }
 
         vm.albumSheet?.let { AddToAlbumSheet(vm, nav, it) }
         vm.playlistSheet?.let { AddToPlaylistSheet(vm, nav, it) }
         vm.editingSong?.let { EditSongDialog(vm, it) }
     }
+    }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun MiniPlayer(
     song: Song?,
     state: PlayerState,
+    sharedScope: SharedTransitionScope,
+    visibilityScope: AnimatedVisibilityScope,
     onOpen: () -> Unit,
     onToggle: () -> Unit,
     onNext: () -> Unit,
@@ -245,7 +272,13 @@ private fun MiniPlayer(
             .height(64.dp),
     ) {
         Row(Modifier.padding(start = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Artwork(song?.art, Modifier.size(48.dp), corner = 8.dp)
+            val sharedArt = with(sharedScope) {
+                Modifier.sharedElement(
+                    rememberSharedContentState(key = NOW_PLAYING_ART_KEY),
+                    visibilityScope,
+                )
+            }
+            Artwork(song?.art, sharedArt.size(48.dp), corner = 8.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(

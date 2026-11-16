@@ -114,7 +114,12 @@ fun LargeTitle(
     ) {
         Text(
             text,
-            style = TextStyle(fontSize = 34.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.4).sp),
+            style = TextStyle(
+                fontFamily = InterDisplay,
+                fontSize = 34.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.5).sp,
+            ),
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

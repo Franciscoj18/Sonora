@@ -13,8 +13,8 @@ android {
         applicationId = "com.sonora.player"
         minSdk = 29          // Android 10 (Moto G9 sale con Android 10/11)
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.2"
     }
 
     signingConfigs {

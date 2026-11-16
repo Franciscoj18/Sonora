@@ -3,7 +3,17 @@ package com.sonora.player.ui
 import android.app.Activity
 import android.content.Context
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
@@ -12,6 +22,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -19,6 +30,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,9 +82,12 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -131,13 +146,92 @@ private suspend fun extractColors(context: Context, model: Any?): Pair<Color, Co
     }
 }
 
+/** Fondo: la carátula difuminada y un oscurecido según qué tan clara es. */
+private class Backdrop(val image: ImageBitmap, val dim: Float)
+
+/**
+ * Crea el fondo difuminado UNA sola vez por canción: reduce la carátula a 32×32 px,
+ * le sube un poco la saturación y la difumina. Al mostrarse estirada a pantalla completa
+ * queda como el fondo de Apple Music, sin ningún costo mientras suena la música.
+ */
+private suspend fun buildBackdrop(context: Context, model: Any?): Backdrop? {
+    if (model == null) return null
+    val request = ImageRequest.Builder(context)
+        .data(model)
+        .size(64)
+        .allowHardware(false)
+        .build()
+    val drawable = (context.imageLoader.execute(request) as? SuccessResult)?.drawable ?: return null
+    return withContext(Dispatchers.Default) {
+        val n = 32
+        val small = android.graphics.Bitmap.createBitmap(n, n, android.graphics.Bitmap.Config.ARGB_8888)
+        val paint = android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG).apply {
+            colorFilter = android.graphics.ColorMatrixColorFilter(
+                android.graphics.ColorMatrix().apply { setSaturation(1.35f) }
+            )
+        }
+        android.graphics.Canvas(small).drawBitmap(
+            drawable.toBitmap(),
+            null,
+            android.graphics.Rect(0, 0, n, n),
+            paint,
+        )
+        val px = IntArray(n * n)
+        small.getPixels(px, 0, n, 0, 0, n, n)
+        repeat(3) { boxBlur(px, n, n, 3) }
+        small.setPixels(px, 0, n, 0, 0, n, n)
+
+        var lum = 0.0
+        for (c in px) lum += ColorUtils.calculateLuminance(c)
+        lum /= px.size
+        Backdrop(small.asImageBitmap(), (0.28f + lum.toFloat() * 0.5f).coerceIn(0.28f, 0.72f))
+    }
+}
+
+/** Desenfoque simple (horizontal + vertical) sobre una imagen pequeña. */
+private fun boxBlur(px: IntArray, w: Int, h: Int, r: Int) {
+    val tmp = IntArray(px.size)
+    for (y in 0 until h) for (x in 0 until w) {
+        var rr = 0; var gg = 0; var bb = 0; var cnt = 0
+        for (k in -r..r) {
+            val c = px[y * w + (x + k).coerceIn(0, w - 1)]
+            rr += (c shr 16) and 0xFF; gg += (c shr 8) and 0xFF; bb += c and 0xFF; cnt++
+        }
+        tmp[y * w + x] = (0xFF shl 24) or ((rr / cnt) shl 16) or ((gg / cnt) shl 8) or (bb / cnt)
+    }
+    for (y in 0 until h) for (x in 0 until w) {
+        var rr = 0; var gg = 0; var bb = 0; var cnt = 0
+        for (k in -r..r) {
+            val c = tmp[(y + k).coerceIn(0, h - 1) * w + x]
+            rr += (c shr 16) and 0xFF; gg += (c shr 8) and 0xFF; bb += c and 0xFF; cnt++
+        }
+        px[y * w + x] = (0xFF shl 24) or ((rr / cnt) shl 16) or ((gg / cnt) shl 8) or (bb / cnt)
+    }
+}
+
+/** Clave compartida para que la carátula "vuele" del mini reproductor al grande. */
+const val NOW_PLAYING_ART_KEY = "now_playing_art"
+
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun NowPlayingScreen(vm: MainViewModel, lib: Library, song: Song?, state: PlayerState, onClose: () -> Unit) {
+fun NowPlayingScreen(
+    vm: MainViewModel,
+    lib: Library,
+    song: Song?,
+    state: PlayerState,
+    sharedScope: SharedTransitionScope,
+    visibilityScope: AnimatedVisibilityScope,
+    onClose: () -> Unit,
+) {
     BackHandler(onBack = onClose)
     val context = LocalContext.current
     val art = song?.art
     var colors by remember { mutableStateOf(DefaultTop to DefaultBottom) }
-    LaunchedEffect(art) { colors = extractColors(context, art) }
+    var backdrop by remember { mutableStateOf<Backdrop?>(null) }
+    LaunchedEffect(art) {
+        colors = extractColors(context, art)
+        backdrop = buildBackdrop(context, art)
+    }
     val top by animateColorAsState(colors.first, tween(700), label = "top")
     val bottom by animateColorAsState(colors.second, tween(700), label = "bottom")
 
@@ -186,6 +280,36 @@ fun NowPlayingScreen(vm: MainViewModel, lib: Library, song: Song?, state: Player
             .background(Brush.verticalGradient(listOf(top, bottom)))
             .pointerInput(Unit) { detectTapGestures { } } // evita toques a la pantalla de atrás
     ) {
+        Crossfade(backdrop, animationSpec = tween(700), label = "backdrop") { b ->
+            if (b != null) {
+                Box(Modifier.fillMaxSize()) {
+                    Image(
+                        bitmap = b.image,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                // Ligeramente ampliada para que no se noten los bordes
+                                scaleX = 1.15f
+                                scaleY = 1.15f
+                            },
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Black.copy(alpha = b.dim * 0.75f),
+                                        Color.Black.copy(alpha = (b.dim + 0.15f).coerceAtMost(0.85f)),
+                                    )
+                                )
+                            )
+                    )
+                }
+            }
+        }
         Column(
             Modifier
                 .fillMaxSize()
@@ -227,9 +351,15 @@ fun NowPlayingScreen(vm: MainViewModel, lib: Library, song: Song?, state: Player
                         spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow),
                         label = "artScale",
                     )
+                    val sharedArt = with(sharedScope) {
+                        Modifier.sharedElement(
+                            rememberSharedContentState(key = NOW_PLAYING_ART_KEY),
+                            visibilityScope,
+                        )
+                    }
                     Artwork(
                         art,
-                        Modifier
+                        sharedArt
                             .fillMaxWidth()
                             .aspectRatio(1f)
                             .graphicsLayer {
@@ -343,9 +473,14 @@ private fun ProgressSection(vm: MainViewModel, state: PlayerState) {
         },
     )
     Row(Modifier.fillMaxWidth()) {
-        Text(formatTime(shown), color = White60, fontSize = 12.sp)
+        Text(formatTime(shown), color = White60, fontSize = 12.sp, fontFeatureSettings = "tnum")
         Spacer(Modifier.weight(1f))
-        Text("-" + formatTime(state.durationMs - shown), color = White60, fontSize = 12.sp)
+        Text(
+            "-" + formatTime(state.durationMs - shown),
+            color = White60,
+            fontSize = 12.sp,
+            fontFeatureSettings = "tnum",
+        )
     }
 }
 
@@ -454,11 +589,7 @@ private fun Controls(vm: MainViewModel, state: PlayerState) {
     ) {
         SmallToggle(Icons.Rounded.Shuffle, state.shuffle, "Aleatorio") { vm.player.toggleShuffle() }
         BigControl(Icons.Rounded.SkipPrevious, 46.dp, "Anterior") { vm.player.previous() }
-        BigControl(
-            if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-            66.dp,
-            if (state.isPlaying) "Pausa" else "Reproducir",
-        ) { vm.player.toggle() }
+        PlayPauseControl(state.isPlaying) { vm.player.toggle() }
         BigControl(Icons.Rounded.SkipNext, 46.dp, "Siguiente") { vm.player.next() }
         SmallToggle(
             if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -468,16 +599,63 @@ private fun Controls(vm: MainViewModel, state: PlayerState) {
     }
 }
 
+/** Al presionar, el botón se encoge y regresa con un pequeño rebote, como en el iPhone. */
+@Composable
+private fun Modifier.bounceClick(pressedScale: Float = 0.8f, onClick: () -> Unit): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(pressed) {
+        if (pressed) {
+            scale.animateTo(pressedScale, spring(stiffness = 1500f))
+        } else {
+            scale.animateTo(1f, spring(dampingRatio = 0.38f, stiffness = 450f))
+        }
+    }
+    return this
+        .graphicsLayer {
+            scaleX = scale.value
+            scaleY = scale.value
+        }
+        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+}
+
 @Composable
 private fun BigControl(icon: ImageVector, size: Dp, label: String, onClick: () -> Unit) {
     Box(
         Modifier
             .size(size + 20.dp)
-            .clip(CircleShape)
-            .clickable(onClick = onClick),
+            .bounceClick(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(size))
+    }
+}
+
+/** Play/pausa: el ícono se transforma con una animación en lugar de cambiar de golpe. */
+@Composable
+private fun PlayPauseControl(isPlaying: Boolean, onClick: () -> Unit) {
+    Box(
+        Modifier
+            .size(86.dp)
+            .bounceClick(pressedScale = 0.78f, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        AnimatedContent(
+            targetState = isPlaying,
+            transitionSpec = {
+                (scaleIn(tween(220), initialScale = 0.5f) + fadeIn(tween(160))) togetherWith
+                    (scaleOut(tween(180), targetScale = 0.5f) + fadeOut(tween(120)))
+            },
+            label = "playPause",
+        ) { playing ->
+            Icon(
+                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (playing) "Pausa" else "Reproducir",
+                tint = Color.White,
+                modifier = Modifier.size(66.dp),
+            )
+        }
     }
 }
 
@@ -486,9 +664,9 @@ private fun SmallToggle(icon: ImageVector, on: Boolean, label: String, onClick: 
     Box(
         Modifier
             .size(40.dp)
+            .bounceClick(pressedScale = 0.85f, onClick = onClick)
             .clip(RoundedCornerShape(8.dp))
-            .background(if (on) Color.White.copy(alpha = 0.25f) else Color.Transparent)
-            .clickable(onClick = onClick),
+            .background(if (on) Color.White.copy(alpha = 0.25f) else Color.Transparent),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
