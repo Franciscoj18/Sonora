@@ -116,6 +116,13 @@ private val DefaultTop = Color(0xFF55555A)
 private val DefaultBottom = Color(0xFF1C1C1E)
 private val White60 = Color.White.copy(alpha = 0.6f)
 
+/** Números de ancho fijo para que el tiempo no "baile" al avanzar. */
+private val TimeStyle = androidx.compose.ui.text.TextStyle(
+    fontFamily = Inter,
+    fontSize = 12.sp,
+    fontFeatureSettings = "tnum",
+)
+
 /**
  * Saca dos colores de la carátula para el fondo degradado (en lugar de un desenfoque
  * en tiempo real, que sería pesado en Android 10/11). Se oscurecen para que el texto
@@ -473,13 +480,12 @@ private fun ProgressSection(vm: MainViewModel, state: PlayerState) {
         },
     )
     Row(Modifier.fillMaxWidth()) {
-        Text(formatTime(shown), color = White60, fontSize = 12.sp, fontFeatureSettings = "tnum")
+        Text(formatTime(shown), color = White60, style = TimeStyle)
         Spacer(Modifier.weight(1f))
         Text(
             "-" + formatTime(state.durationMs - shown),
             color = White60,
-            fontSize = 12.sp,
-            fontFeatureSettings = "tnum",
+            style = TimeStyle,
         )
     }
 }
