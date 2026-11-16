@@ -33,6 +33,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -319,134 +323,213 @@ fun NowPlayingScreen(
                 }
             }
         }
-        Column(
+        // Vertical: carátula arriba y controles abajo.
+        // Horizontal (acostado): carátula a la izquierda y controles a la derecha.
+        BoxWithConstraints(
             Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 28.dp),
+                .windowInsetsPadding(WindowInsets.safeDrawing)
         ) {
-            // Asa superior
-            Box(
-                dragToClose
-                    .fillMaxWidth()
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { close() }
-                    .padding(vertical = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Box(
+            val landscape = maxWidth > maxHeight
+            if (landscape) {
+                Row(
                     Modifier
-                        .size(width = 40.dp, height = 5.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.45f))
+                        .fillMaxSize()
+                        .padding(start = 32.dp, end = 32.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(
+                        Modifier
+                            .weight(0.46f)
+                            .fillMaxHeight()
+                    ) {
+                        SheetHandle(dragToClose, close)
+                        ArtPanel(
+                            vm, lib, state, art, showQueue, sharedScope, visibilityScope, dragToClose,
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        )
+                    }
+                    Spacer(Modifier.width(40.dp))
+                    Column(
+                        Modifier
+                            .weight(0.54f)
+                            .fillMaxHeight(),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        PlayerInfo(vm, song, state, showQueue, compact = true) { showQueue = !showQueue }
+                    }
+                }
+            } else {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 28.dp),
+                ) {
+                    SheetHandle(dragToClose, close)
+                    ArtPanel(
+                        vm, lib, state, art, showQueue, sharedScope, visibilityScope, dragToClose,
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(26.dp))
+                    PlayerInfo(vm, song, state, showQueue, compact = false) { showQueue = !showQueue }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+/** Asa superior: tócala o arrastra hacia abajo para cerrar el reproductor. */
+@Composable
+private fun SheetHandle(dragToClose: Modifier, onClose: () -> Unit) {
+    Box(
+        dragToClose
+            .fillMaxWidth()
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClose,
+            )
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(width = 40.dp, height = 5.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.45f))
+        )
+    }
+}
+
+/** La carátula (con el gesto para cambiar de canción) o la cola "A continuación". */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+private fun ArtPanel(
+    vm: MainViewModel,
+    lib: Library,
+    state: PlayerState,
+    art: Any?,
+    showQueue: Boolean,
+    sharedScope: SharedTransitionScope,
+    visibilityScope: AnimatedVisibilityScope,
+    dragToClose: Modifier,
+    modifier: Modifier,
+) {
+    val scope = rememberCoroutineScope()
+    val view = LocalView.current
+    Box(
+        modifier.then(if (showQueue) Modifier else dragToClose),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (showQueue) {
+            QueuePanel(vm, lib, state)
+        } else {
+            val scale by animateFloatAsState(
+                if (state.isPlaying) 1f else 0.8f,
+                spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow),
+                label = "artScale",
+            )
+            val sharedArt = with(sharedScope) {
+                Modifier.sharedElement(
+                    rememberSharedContentState(key = NOW_PLAYING_ART_KEY),
+                    visibilityScope,
                 )
             }
-
-            Box(
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .then(if (showQueue) Modifier else dragToClose),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (showQueue) {
-                    QueuePanel(vm, lib, state)
-                } else {
-                    val scale by animateFloatAsState(
-                        if (state.isPlaying) 1f else 0.8f,
-                        spring(dampingRatio = 0.62f, stiffness = Spring.StiffnessLow),
-                        label = "artScale",
-                    )
-                    val sharedArt = with(sharedScope) {
-                        Modifier.sharedElement(
-                            rememberSharedContentState(key = NOW_PLAYING_ART_KEY),
-                            visibilityScope,
-                        )
-                    }
-                    // Deslizar la carátula a la izquierda/derecha para cambiar de canción
-                    val swipe = remember { Animatable(0f) }
-                    val canNext by rememberUpdatedState(state.hasNext)
-                    val canPrev by rememberUpdatedState(state.hasPrevious)
-                    val swipeGesture = Modifier.pointerInput(Unit) {
-                        detectHorizontalDragGestures(
-                            onDragEnd = {
-                                val width = size.width.toFloat()
-                                scope.launch {
-                                    val v = swipe.value
-                                    val goNext = v < -width * 0.22f && canNext
-                                    val goPrev = v > width * 0.22f && canPrev
-                                    if (goNext || goPrev) {
-                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                                        swipe.animateTo(if (goNext) -width * 1.15f else width * 1.15f, tween(150))
-                                        if (goNext) vm.player.nextTrack() else vm.player.previousTrack()
-                                        swipe.snapTo(if (goNext) width * 0.5f else -width * 0.5f)
-                                        swipe.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 420f))
-                                    } else {
-                                        swipe.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 500f))
-                                    }
-                                }
-                            },
-                            onDragCancel = { scope.launch { swipe.animateTo(0f, spring()) } },
-                            onHorizontalDrag = { change, amount ->
-                                change.consume()
-                                // Si no hay canción en esa dirección, el gesto opone resistencia
-                                val blocked = (amount < 0 && !canNext && swipe.value <= 0f) ||
-                                    (amount > 0 && !canPrev && swipe.value >= 0f)
-                                val step = if (blocked) amount * 0.25f else amount
-                                scope.launch { swipe.snapTo(swipe.value + step) }
-                            },
-                        )
-                    }
-                    Artwork(
-                        art,
-                        sharedArt
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .then(swipeGesture)
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                                translationX = swipe.value
-                                alpha = if (size.width > 0f) {
-                                    (1f - abs(swipe.value) / size.width * 0.9f).coerceIn(0.15f, 1f)
-                                } else {
-                                    1f
-                                }
+            // Deslizar la carátula a la izquierda/derecha para cambiar de canción
+            val swipe = remember { Animatable(0f) }
+            val canNext by rememberUpdatedState(state.hasNext)
+            val canPrev by rememberUpdatedState(state.hasPrevious)
+            val swipeGesture = Modifier.pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        val width = size.width.toFloat()
+                        scope.launch {
+                            val v = swipe.value
+                            val goNext = v < -width * 0.22f && canNext
+                            val goPrev = v > width * 0.22f && canPrev
+                            if (goNext || goPrev) {
+                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                swipe.animateTo(if (goNext) -width * 1.15f else width * 1.15f, tween(150))
+                                if (goNext) vm.player.nextTrack() else vm.player.previousTrack()
+                                swipe.snapTo(if (goNext) width * 0.5f else -width * 0.5f)
+                                swipe.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 420f))
+                            } else {
+                                swipe.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 500f))
                             }
-                            .shadow(if (state.isPlaying) 28.dp else 12.dp, RoundedCornerShape(12.dp)),
-                        corner = 12.dp,
+                        }
+                    },
+                    onDragCancel = { scope.launch { swipe.animateTo(0f, spring()) } },
+                    onHorizontalDrag = { change, amount ->
+                        change.consume()
+                        // Si no hay canción en esa dirección, el gesto opone resistencia
+                        val blocked = (amount < 0 && !canNext && swipe.value <= 0f) ||
+                            (amount > 0 && !canPrev && swipe.value >= 0f)
+                        val step = if (blocked) amount * 0.25f else amount
+                        scope.launch { swipe.snapTo(swipe.value + step) }
+                    },
+                )
+            }
+            Artwork(
+                art,
+                sharedArt
+                    // Se ajusta al espacio disponible: nunca se sale ni tapa los controles
+                    .aspectRatio(1f, matchHeightConstraintsFirst = true)
+                    .then(swipeGesture)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                        translationX = swipe.value
+                        alpha = if (size.width > 0f) {
+                            (1f - abs(swipe.value) / size.width * 0.9f).coerceIn(0.15f, 1f)
+                        } else {
+                            1f
+                        }
+                    }
+                    .shadow(if (state.isPlaying) 28.dp else 12.dp, RoundedCornerShape(12.dp)),
+                corner = 12.dp,
+            )
+        }
+    }
+}
+
+/** Título, barra de progreso, controles y botón de la cola. */
+@Composable
+private fun PlayerInfo(
+    vm: MainViewModel,
+    song: Song?,
+    state: PlayerState,
+    showQueue: Boolean,
+    compact: Boolean,
+    onToggleQueue: () -> Unit,
+) {
+    Column {
+        TitleRow(vm, song, state)
+        Spacer(Modifier.height(if (compact) 10.dp else 18.dp))
+        ProgressSection(vm, state)
+        Spacer(Modifier.height(if (compact) 4.dp else 10.dp))
+        Controls(vm, state)
+        Spacer(Modifier.height(if (compact) 4.dp else 18.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = onToggleQueue) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (showQueue) Color.White.copy(alpha = 0.25f) else Color.Transparent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Rounded.QueueMusic,
+                        contentDescription = "A continuación",
+                        tint = Color.White,
                     )
                 }
             }
-
-            Spacer(Modifier.height(26.dp))
-            TitleRow(vm, song, state)
-            Spacer(Modifier.height(18.dp))
-            ProgressSection(vm, state)
-            Spacer(Modifier.height(10.dp))
-            Controls(vm, state)
-            Spacer(Modifier.height(18.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = { showQueue = !showQueue }) {
-                    Box(
-                        Modifier
-                            .size(36.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (showQueue) Color.White.copy(alpha = 0.25f) else Color.Transparent),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.QueueMusic,
-                            contentDescription = "A continuación",
-                            tint = Color.White,
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(8.dp))
         }
     }
 }
