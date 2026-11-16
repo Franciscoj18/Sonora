@@ -28,6 +28,8 @@ data class PlayerState(
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val upcoming: List<QueueEntry> = emptyList(),
+    val hasNext: Boolean = false,
+    val hasPrevious: Boolean = false,
 )
 
 /** Conecta la interfaz con el servicio de reproducción. */
@@ -86,6 +88,8 @@ class PlayerController(context: Context) {
             shuffle = c.shuffleModeEnabled,
             repeatMode = c.repeatMode,
             upcoming = upcoming,
+            hasNext = c.hasNextMediaItem(),
+            hasPrevious = c.hasPreviousMediaItem(),
         )
     }
 
@@ -113,6 +117,28 @@ class PlayerController(context: Context) {
     }
 
     fun next() = withController { it.seekToNext() }
+
+    /** Cambia de canción sí o sí (para el gesto de deslizar la carátula). */
+    fun nextTrack() = withController { it.seekToNextMediaItem() }
+    fun previousTrack() = withController { it.seekToPreviousMediaItem() }
+
+    /**
+     * Restaura la última sesión SOLO si el reproductor está vacío (por ejemplo, después de
+     * que Android cerró la app). Queda en pausa, lista para continuar.
+     */
+    fun restoreIfEmpty(
+        items: List<MediaItem>,
+        index: Int,
+        positionMs: Long,
+        shuffle: Boolean,
+        repeatMode: Int,
+    ) = withController { c ->
+        if (c.mediaItemCount > 0 || items.isEmpty()) return@withController
+        c.repeatMode = repeatMode
+        c.setMediaItems(items, index.coerceIn(0, items.lastIndex), positionMs)
+        c.shuffleModeEnabled = shuffle
+        c.prepare()
+    }
     fun previous() = withController { it.seekToPrevious() }
     fun seekTo(ms: Long) = withController { it.seekTo(ms) }
     fun skipTo(index: Int) = withController { it.seekTo(index, 0L); it.play() }

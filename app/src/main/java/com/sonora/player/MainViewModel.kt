@@ -10,9 +10,11 @@ import androidx.lifecycle.viewModelScope
 import com.sonora.player.data.Album
 import com.sonora.player.data.Library
 import com.sonora.player.data.Song
+import com.sonora.player.playback.PlaybackStore
 import com.sonora.player.playback.PlayerController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -32,6 +34,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var pendingSongIds: List<Long> = emptyList()
 
     fun rescan() = repo.requestScan()
+
+    init {
+        // Continuar donde te quedaste: cuando la biblioteca esté lista, vuelve a cargar
+        // la última cola en el mismo segundo (en pausa).
+        viewModelScope.launch {
+            val saved = withContext(Dispatchers.IO) { PlaybackStore.load(app) } ?: return@launch
+            val lib = library.first { it.loaded && it.songs.isNotEmpty() }
+            val songs = saved.queue.mapNotNull { lib.byId[it] }
+            if (songs.isEmpty()) return@launch
+            val index = songs.indexOfFirst { it.id == saved.currentId }
+            val items = withContext(Dispatchers.IO) { PlayerController.buildItems(songs) }
+            player.restoreIfEmpty(
+                items = items,
+                index = if (index >= 0) index else 0,
+                positionMs = if (index >= 0) saved.positionMs else 0L,
+                shuffle = saved.shuffle,
+                repeatMode = saved.repeatMode,
+            )
+        }
+    }
 
     // ---------- Reproducción ----------
 

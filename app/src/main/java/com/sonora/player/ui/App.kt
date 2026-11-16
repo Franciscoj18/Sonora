@@ -64,6 +64,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -262,6 +264,7 @@ private fun MiniPlayer(
     modifier: Modifier = Modifier,
 ) {
     val dark = isSystemInDarkTheme()
+    val view = LocalView.current
     Surface(
         onClick = onOpen,
         shape = RoundedCornerShape(16.dp),
@@ -296,14 +299,20 @@ private fun MiniPlayer(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            IconButton(onClick = onToggle) {
+            IconButton(onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onToggle()
+            }) {
                 Icon(
                     if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     contentDescription = if (state.isPlaying) "Pausa" else "Reproducir",
                     modifier = Modifier.size(32.dp),
                 )
             }
-            IconButton(onClick = onNext) {
+            IconButton(onClick = {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onNext()
+            }) {
                 Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", modifier = Modifier.size(30.dp))
             }
         }

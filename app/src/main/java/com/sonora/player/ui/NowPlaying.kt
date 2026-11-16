@@ -90,6 +90,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import android.view.HapticFeedbackConstants
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -111,6 +112,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 private val DefaultTop = Color(0xFF55555A)
 private val DefaultBottom = Color(0xFF1C1C1E)
@@ -364,14 +366,55 @@ fun NowPlayingScreen(
                             visibilityScope,
                         )
                     }
+                    // Deslizar la carátula a la izquierda/derecha para cambiar de canción
+                    val swipe = remember { Animatable(0f) }
+                    val canNext by rememberUpdatedState(state.hasNext)
+                    val canPrev by rememberUpdatedState(state.hasPrevious)
+                    val swipeGesture = Modifier.pointerInput(Unit) {
+                        detectHorizontalDragGestures(
+                            onDragEnd = {
+                                val width = size.width.toFloat()
+                                scope.launch {
+                                    val v = swipe.value
+                                    val goNext = v < -width * 0.22f && canNext
+                                    val goPrev = v > width * 0.22f && canPrev
+                                    if (goNext || goPrev) {
+                                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                        swipe.animateTo(if (goNext) -width * 1.15f else width * 1.15f, tween(150))
+                                        if (goNext) vm.player.nextTrack() else vm.player.previousTrack()
+                                        swipe.snapTo(if (goNext) width * 0.5f else -width * 0.5f)
+                                        swipe.animateTo(0f, spring(dampingRatio = 0.82f, stiffness = 420f))
+                                    } else {
+                                        swipe.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 500f))
+                                    }
+                                }
+                            },
+                            onDragCancel = { scope.launch { swipe.animateTo(0f, spring()) } },
+                            onHorizontalDrag = { change, amount ->
+                                change.consume()
+                                // Si no hay canción en esa dirección, el gesto opone resistencia
+                                val blocked = (amount < 0 && !canNext && swipe.value <= 0f) ||
+                                    (amount > 0 && !canPrev && swipe.value >= 0f)
+                                val step = if (blocked) amount * 0.25f else amount
+                                scope.launch { swipe.snapTo(swipe.value + step) }
+                            },
+                        )
+                    }
                     Artwork(
                         art,
                         sharedArt
                             .fillMaxWidth()
                             .aspectRatio(1f)
+                            .then(swipeGesture)
                             .graphicsLayer {
                                 scaleX = scale
                                 scaleY = scale
+                                translationX = swipe.value
+                                alpha = if (size.width > 0f) {
+                                    (1f - abs(swipe.value) / size.width * 0.9f).coerceIn(0.15f, 1f)
+                                } else {
+                                    1f
+                                }
                             }
                             .shadow(if (state.isPlaying) 28.dp else 12.dp, RoundedCornerShape(12.dp)),
                         corner = 12.dp,
@@ -507,6 +550,7 @@ private fun ThinSlider(
     val height by animateDpAsState(if (active) 11.dp else 6.dp, label = "barHeight")
     val drag by rememberUpdatedState(onDrag)
     val release by rememberUpdatedState(onRelease)
+    val view = LocalView.current
 
     // Posición del destello (0 = inicio, 1 = final de la parte reproducida).
     // Solo se anima mientras hay música: en pausa no consume batería.
@@ -531,6 +575,7 @@ private fun ThinSlider(
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragStart = { o ->
+                        view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                         active = true
                         last = (o.x / size.width).coerceIn(0f, 1f)
                         drag(last)
@@ -539,7 +584,12 @@ private fun ThinSlider(
                     onDragCancel = { active = false; release(last) },
                     onHorizontalDrag = { change, _ ->
                         change.consume()
-                        last = (change.position.x / size.width).coerceIn(0f, 1f)
+                        val next = (change.position.x / size.width).coerceIn(0f, 1f)
+                        // Pequeña vibración al llegar al inicio o al final de la barra
+                        if ((next == 0f || next == 1f) && next != last) {
+                            view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                        }
+                        last = next
                         drag(last)
                     },
                 )
@@ -608,6 +658,7 @@ private fun Controls(vm: MainViewModel, state: PlayerState) {
 /** Al presionar, el botón se encoge y regresa con un pequeño rebote, como en el iPhone. */
 @Composable
 private fun Modifier.bounceClick(pressedScale: Float = 0.8f, onClick: () -> Unit): Modifier {
+    val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale = remember { Animatable(1f) }
@@ -623,7 +674,11 @@ private fun Modifier.bounceClick(pressedScale: Float = 0.8f, onClick: () -> Unit
             scaleX = scale.value
             scaleY = scale.value
         }
-        .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+        .clickable(interactionSource = interaction, indication = null) {
+            // Vibración ligera (respeta el ajuste de "vibrar al tocar" del teléfono)
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onClick()
+        }
 }
 
 @Composable
