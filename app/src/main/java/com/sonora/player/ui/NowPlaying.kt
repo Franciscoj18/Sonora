@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -65,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -331,6 +333,7 @@ private fun ProgressSection(vm: MainViewModel, state: PlayerState) {
 
     ThinSlider(
         fraction = fraction,
+        playing = state.isPlaying,
         onDrag = { dragFraction = it },
         onRelease = { f ->
             val target = (f * duration).toLong()
@@ -346,14 +349,39 @@ private fun ProgressSection(vm: MainViewModel, state: PlayerState) {
     }
 }
 
-/** Barra de progreso delgada, sin "bolita", que se ensancha al arrastrarla. */
+/**
+ * Barra de progreso delgada, sin "bolita", que se ensancha al arrastrarla.
+ * Mientras suena la música, un destello de luz recorre la parte reproducida
+ * ("pulso de brillo"); al pausar se desvanece suavemente.
+ */
 @Composable
-private fun ThinSlider(fraction: Float, onDrag: (Float) -> Unit, onRelease: (Float) -> Unit) {
+private fun ThinSlider(
+    fraction: Float,
+    playing: Boolean,
+    onDrag: (Float) -> Unit,
+    onRelease: (Float) -> Unit,
+) {
     var active by remember { mutableStateOf(false) }
     var last by remember { mutableFloatStateOf(0f) }
     val height by animateDpAsState(if (active) 11.dp else 6.dp, label = "barHeight")
     val drag by rememberUpdatedState(onDrag)
     val release by rememberUpdatedState(onRelease)
+
+    // Posición del destello (0 = inicio, 1 = final de la parte reproducida).
+    // Solo se anima mientras hay música: en pausa no consume batería.
+    val shine = remember { Animatable(-0.3f) }
+    LaunchedEffect(playing) {
+        while (playing) {
+            shine.snapTo(-0.3f)
+            shine.animateTo(1.3f, tween(durationMillis = 2400, easing = LinearEasing))
+            delay(1200)
+        }
+    }
+    val shineAlpha by animateFloatAsState(
+        if (playing && !active) 1f else 0f,
+        tween(600),
+        label = "shineAlpha",
+    )
 
     Box(
         Modifier
@@ -391,7 +419,27 @@ private fun ThinSlider(fraction: Float, onDrag: (Float) -> Unit, onRelease: (Flo
                 Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(fraction)
-                    .background(Color.White.copy(alpha = if (active) 1f else 0.8f))
+                    .background(Color.White.copy(alpha = if (active) 1f else 0.62f))
+                    .drawWithContent {
+                        drawContent()
+                        // Se lee aquí (fase de dibujo) para no recomponer la pantalla en cada cuadro
+                        val a = shineAlpha
+                        if (a > 0.01f && size.width > 4f) {
+                            val glow = 80.dp.toPx()
+                            val cx = shine.value * size.width
+                            drawRect(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color.White.copy(alpha = 0f),
+                                        Color.White.copy(alpha = 0.95f * a),
+                                        Color.White.copy(alpha = 0f),
+                                    ),
+                                    startX = cx - glow / 2f,
+                                    endX = cx + glow / 2f,
+                                )
+                            )
+                        }
+                    }
             )
         }
     }
