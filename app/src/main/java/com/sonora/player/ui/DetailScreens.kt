@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -52,6 +54,9 @@ fun AlbumDetailScreen(vm: MainViewModel, nav: NavController, key: String) {
     val state by vm.player.state.collectAsStateWithLifecycle()
     val album = lib.album(key)
     var confirmDelete by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val collapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+    val glow = rememberArtGlow(album?.art)
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val a = lib.album(key)
         if (uri != null && a != null) vm.setAlbumCover(a, uri)
@@ -66,7 +71,12 @@ fun AlbumDetailScreen(vm: MainViewModel, nav: NavController, key: String) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        NavBar(onBack = { nav.popBackStack() }) {
+        NavBar(
+            onBack = { nav.popBackStack() },
+            title = album.title,
+            showTitle = collapsed,
+            showDivider = collapsed,
+        ) {
             MoreButton { dismiss ->
                 MenuItem("Cambiar carátula", Icons.Rounded.Image) { picker.launch("image/*"); dismiss() }
                 if (album.coverPath != null) {
@@ -86,7 +96,11 @@ fun AlbumDetailScreen(vm: MainViewModel, nav: NavController, key: String) {
                 }
             }
         }
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = LocalBottomInset.current)) {
+        LazyColumn(
+            Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = LocalBottomInset.current),
+        ) {
             item {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.height(8.dp))
@@ -94,8 +108,9 @@ fun AlbumDetailScreen(vm: MainViewModel, nav: NavController, key: String) {
                         album.art,
                         Modifier
                             .size(250.dp)
-                            .shadow(18.dp, RoundedCornerShape(10.dp)),
+                            .shadow(22.dp, RoundedCornerShape(10.dp), ambientColor = glow, spotColor = glow),
                         corner = 10.dp,
+                        seed = album.title,
                     )
                     Spacer(Modifier.height(18.dp))
                     Text(
@@ -185,11 +200,23 @@ fun ArtistDetailScreen(vm: MainViewModel, nav: NavController, name: String) {
     val lib by vm.library.collectAsStateWithLifecycle()
     val state by vm.player.state.collectAsStateWithLifecycle()
     val artist = lib.artist(name)
+    val listState = rememberLazyListState()
+    val collapsed by rememberCollapsed(listState)
 
     Column(Modifier.fillMaxSize()) {
-        NavBar(onBack = { nav.popBackStack() }, backLabel = "Artistas")
+        NavBar(
+            onBack = { nav.popBackStack() },
+            title = artist?.name.orEmpty(),
+            backLabel = "Artistas",
+            showTitle = collapsed,
+            showDivider = collapsed,
+        )
         if (artist == null) return@Column
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = LocalBottomInset.current)) {
+        LazyColumn(
+            Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = LocalBottomInset.current),
+        ) {
             item { LargeTitle(artist.name) }
             item {
                 PlayShuffleButtons(
@@ -241,8 +268,17 @@ fun PlaylistDetailScreen(vm: MainViewModel, nav: NavController, id: Long) {
         return
     }
 
+    val listState = rememberLazyListState()
+    val collapsed by remember { derivedStateOf { listState.firstVisibleItemIndex > 0 } }
+    val glow = rememberArtGlow(playlist.coverPath?.let { java.io.File(it) } ?: playlist.songs.firstOrNull()?.art)
     Column(Modifier.fillMaxSize()) {
-        NavBar(onBack = { nav.popBackStack() }, backLabel = "Playlists") {
+        NavBar(
+            onBack = { nav.popBackStack() },
+            title = playlist.name,
+            backLabel = "Playlists",
+            showTitle = collapsed,
+            showDivider = collapsed,
+        ) {
             MoreButton { dismiss ->
                 MenuItem("Editar playlist", Icons.Rounded.Edit) { nav.navigate("editPlaylist/$id"); dismiss() }
                 MenuItem("Cambiar carátula", Icons.Rounded.Image) { picker.launch("image/*"); dismiss() }
@@ -253,7 +289,11 @@ fun PlaylistDetailScreen(vm: MainViewModel, nav: NavController, id: Long) {
                 MenuItem("Eliminar playlist", Icons.Rounded.Delete, destructive = true) { confirmDelete = true; dismiss() }
             }
         }
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = LocalBottomInset.current)) {
+        LazyColumn(
+            Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = LocalBottomInset.current),
+        ) {
             item {
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     Spacer(Modifier.height(8.dp))
@@ -261,7 +301,7 @@ fun PlaylistDetailScreen(vm: MainViewModel, nav: NavController, id: Long) {
                         playlist,
                         Modifier
                             .size(250.dp)
-                            .shadow(18.dp, RoundedCornerShape(10.dp)),
+                            .shadow(22.dp, RoundedCornerShape(10.dp), ambientColor = glow, spotColor = glow),
                         corner = 10.dp,
                     )
                     Spacer(Modifier.height(18.dp))

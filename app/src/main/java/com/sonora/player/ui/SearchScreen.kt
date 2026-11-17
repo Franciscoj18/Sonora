@@ -122,7 +122,7 @@ fun SearchScreen(vm: MainViewModel, nav: NavController) {
                             .padding(horizontal = 16.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Artwork(artist.art, Modifier.size(48.dp), shape = CircleShape)
+                        Artwork(artist.art, Modifier.size(48.dp), shape = CircleShape, seed = artist.name)
                         Spacer(Modifier.width(14.dp))
                         Text(artist.name, fontSize = 17.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }

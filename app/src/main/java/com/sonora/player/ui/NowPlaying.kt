@@ -345,7 +345,7 @@ fun NowPlayingScreen(
                     ) {
                         SheetHandle(dragToClose, close)
                         ArtPanel(
-                            vm, lib, state, art, showQueue, sharedScope, visibilityScope, dragToClose,
+                            vm, lib, state, art, song?.album, showQueue, sharedScope, visibilityScope, dragToClose,
                             Modifier
                                 .weight(1f)
                                 .fillMaxWidth(),
@@ -369,7 +369,7 @@ fun NowPlayingScreen(
                 ) {
                     SheetHandle(dragToClose, close)
                     ArtPanel(
-                        vm, lib, state, art, showQueue, sharedScope, visibilityScope, dragToClose,
+                        vm, lib, state, art, song?.album, showQueue, sharedScope, visibilityScope, dragToClose,
                         Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -414,6 +414,7 @@ private fun ArtPanel(
     lib: Library,
     state: PlayerState,
     art: Any?,
+    seed: String?,
     showQueue: Boolean,
     sharedScope: SharedTransitionScope,
     visibilityScope: AnimatedVisibilityScope,
@@ -422,6 +423,8 @@ private fun ArtPanel(
 ) {
     val scope = rememberCoroutineScope()
     val view = LocalView.current
+    // Sombra con el color de la carátula
+    val glow = rememberArtGlow(art)
     Box(
         modifier.then(if (showQueue) Modifier else dragToClose),
         contentAlignment = Alignment.Center,
@@ -490,8 +493,14 @@ private fun ArtPanel(
                             1f
                         }
                     }
-                    .shadow(if (state.isPlaying) 28.dp else 12.dp, RoundedCornerShape(12.dp)),
+                    .shadow(
+                        if (state.isPlaying) 30.dp else 14.dp,
+                        RoundedCornerShape(12.dp),
+                        ambientColor = glow,
+                        spotColor = glow,
+                    ),
                 corner = 12.dp,
+                seed = seed,
             )
         }
     }
@@ -726,12 +735,12 @@ private fun Controls(vm: MainViewModel, state: PlayerState) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SmallToggle(Icons.Rounded.Shuffle, state.shuffle, "Aleatorio") { vm.player.toggleShuffle() }
-        BigControl(Icons.Rounded.SkipPrevious, 46.dp, "Anterior") { vm.player.previous() }
+        SmallToggle(SonoraIcons.Shuffle, state.shuffle, "Aleatorio") { vm.player.toggleShuffle() }
+        BigControl(SonoraIcons.Previous, 40.dp, "Anterior") { vm.player.previous() }
         PlayPauseControl(state.isPlaying) { vm.player.toggle() }
-        BigControl(Icons.Rounded.SkipNext, 46.dp, "Siguiente") { vm.player.next() }
+        BigControl(SonoraIcons.Next, 40.dp, "Siguiente") { vm.player.next() }
         SmallToggle(
-            if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
+            if (state.repeatMode == Player.REPEAT_MODE_ONE) SonoraIcons.RepeatOne else SonoraIcons.Repeat,
             state.repeatMode != Player.REPEAT_MODE_OFF,
             "Repetir",
         ) { vm.player.cycleRepeat() }
@@ -794,10 +803,10 @@ private fun PlayPauseControl(isPlaying: Boolean, onClick: () -> Unit) {
             label = "playPause",
         ) { playing ->
             Icon(
-                if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                if (playing) SonoraIcons.Pause else SonoraIcons.Play,
                 contentDescription = if (playing) "Pausa" else "Reproducir",
                 tint = Color.White,
-                modifier = Modifier.size(66.dp),
+                modifier = Modifier.size(54.dp),
             )
         }
     }
@@ -846,7 +855,7 @@ private fun QueuePanel(vm: MainViewModel, lib: Library, state: PlayerState) {
                         .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Artwork(s.art, Modifier.size(44.dp), corner = 5.dp)
+                    Artwork(s.art, Modifier.size(44.dp), corner = 5.dp, seed = s.album)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(s.title, color = Color.White, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

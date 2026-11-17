@@ -1,6 +1,14 @@
 package com.sonora.player.ui
 
+import android.content.Context
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -43,24 +51,48 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.graphics.drawable.toBitmap
+import androidx.palette.graphics.Palette
 import coil.compose.AsyncImage
+import coil.compose.AsyncImagePainter
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.random.Random
 import com.sonora.player.MainViewModel
 import com.sonora.player.data.Album
 import com.sonora.player.data.Playlist
@@ -69,34 +101,170 @@ import com.sonora.player.data.Song
 /** Espacio inferior que ocupan el mini reproductor y la barra de pestañas. */
 val LocalBottomInset = compositionLocalOf { 0.dp }
 
+/** Si la música está sonando (para animar las barritas de ecualizador en las listas). */
+val LocalIsPlaying = compositionLocalOf { false }
+
+/** Pares de colores para las carátulas de reemplazo. */
+private val PlaceholderGradients = listOf(
+    Color(0xFFFF5F6D) to Color(0xFFFFC371),
+    Color(0xFF8E2DE2) to Color(0xFF4A00E0),
+    Color(0xFF00B4DB) to Color(0xFF0083B0),
+    Color(0xFFF953C6) to Color(0xFFB91D73),
+    Color(0xFF11998E) to Color(0xFF38EF7D),
+    Color(0xFFFC466B) to Color(0xFF3F5EFB),
+    Color(0xFFFF9966) to Color(0xFFFF5E62),
+    Color(0xFF654EA3) to Color(0xFFEAAFC8),
+    Color(0xFF3A7BD5) to Color(0xFF00D2FF),
+    Color(0xFFEE0979) to Color(0xFFFF6A00),
+)
+
+/**
+ * Carátula. Si la canción o el álbum no tiene imagen (típico de descargas de YouTube),
+ * muestra un degradado de color único según el nombre (`seed`) con su inicial,
+ * en lugar de un cuadro gris.
+ */
+@OptIn(ExperimentalTextApi::class)
 @Composable
 fun Artwork(
     model: Any?,
     modifier: Modifier = Modifier,
     corner: Dp = 6.dp,
     shape: Shape = RoundedCornerShape(corner),
+    seed: String? = null,
 ) {
+    var failed by remember(model) { mutableStateOf(model == null) }
     Box(
         modifier
             .clip(shape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            Icons.Rounded.MusicNote,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
-            modifier = Modifier.fillMaxSize(0.42f),
-        )
+        if (failed) {
+            if (seed != null) {
+                val pair = PlaceholderGradients[Math.floorMod(seed.lowercase().hashCode(), PlaceholderGradients.size)]
+                val initial = seed.firstOrNull { it.isLetterOrDigit() }?.uppercaseChar()?.toString() ?: "♪"
+                val measurer = rememberTextMeasurer()
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .drawWithCache {
+                            val brush = Brush.linearGradient(
+                                listOf(pair.first, pair.second),
+                                start = Offset.Zero,
+                                end = Offset(size.width, size.height),
+                            )
+                            val layout = measurer.measure(
+                                initial,
+                                TextStyle(
+                                    color = Color.White.copy(alpha = 0.92f),
+                                    fontSize = (size.minDimension * 0.42f).coerceAtLeast(1f).toSp(),
+                                    fontFamily = InterDisplay,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                            )
+                            onDrawBehind {
+                                drawRect(brush)
+                                drawText(
+                                    layout,
+                                    topLeft = Offset(
+                                        (size.width - layout.size.width) / 2f,
+                                        (size.height - layout.size.height) / 2f,
+                                    ),
+                                )
+                            }
+                        }
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.MusicNote,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                    modifier = Modifier.fillMaxSize(0.42f),
+                )
+            }
+        }
         if (model != null) {
             AsyncImage(
                 model = model,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
+                onState = { st -> failed = st is AsyncImagePainter.State.Error },
                 modifier = Modifier.fillMaxSize(),
             )
         }
     }
+}
+
+/** Color llamativo de una carátula (para la sombra de color). */
+suspend fun artGlowColor(context: Context, model: Any?): Color? {
+    if (model == null) return null
+    val request = ImageRequest.Builder(context).data(model).size(64).allowHardware(false).build()
+    val drawable = (context.imageLoader.execute(request) as? SuccessResult)?.drawable ?: return null
+    return withContext(Dispatchers.Default) {
+        val palette = Palette.from(drawable.toBitmap()).maximumColorCount(12).generate()
+        val rgb = palette.vibrantSwatch?.rgb
+            ?: palette.lightVibrantSwatch?.rgb
+            ?: palette.dominantSwatch?.rgb
+        rgb?.let { Color(it) }
+    }
+}
+
+/** Devuelve (animado) el color de la carátula para usarlo como sombra. */
+@Composable
+fun rememberArtGlow(model: Any?, fallback: Color = Color.Black): Color {
+    val context = LocalContext.current
+    var color by remember { mutableStateOf(fallback) }
+    LaunchedEffect(model) { color = artGlowColor(context, model) ?: fallback }
+    val animated by animateColorAsState(color, tween(600), label = "glow")
+    return animated
+}
+
+/** Tres barritas animadas que indican la canción que está sonando. */
+@Composable
+fun EqualizerBars(playing: Boolean, color: Color, modifier: Modifier = Modifier) {
+    val bars = remember { List(3) { Animatable(0.35f) } }
+    LaunchedEffect(playing) {
+        bars.forEachIndexed { i, bar ->
+            launch {
+                if (playing) {
+                    while (true) {
+                        bar.animateTo(
+                            Random.nextFloat() * 0.7f + 0.3f,
+                            tween(durationMillis = 200 + i * 70 + Random.nextInt(140)),
+                        )
+                    }
+                } else {
+                    bar.animateTo(0.3f, tween(300))
+                }
+            }
+        }
+    }
+    Canvas(modifier) {
+        val barW = size.width / 5f
+        bars.forEachIndexed { i, bar ->
+            val h = size.height * bar.value
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(i * 2f * barW, size.height - h),
+                size = Size(barW, h),
+                cornerRadius = CornerRadius(barW / 2f),
+            )
+        }
+    }
+}
+
+/** true cuando la lista ya se desplazó más allá del título grande. */
+@Composable
+fun rememberCollapsed(state: LazyListState, titleIndex: Int = 0): State<Boolean> = remember(state) {
+    derivedStateOf {
+        state.firstVisibleItemIndex > titleIndex ||
+            (state.firstVisibleItemIndex == titleIndex && state.firstVisibleItemScrollOffset > 70)
+    }
+}
+
+@Composable
+fun rememberCollapsed(state: LazyGridState): State<Boolean> = remember(state) {
+    derivedStateOf { state.firstVisibleItemIndex > 0 || state.firstVisibleItemScrollOffset > 70 }
 }
 
 @Composable
@@ -146,13 +314,22 @@ fun NavBar(
     onBack: (() -> Unit)?,
     title: String = "",
     backLabel: String = "Atrás",
+    showTitle: Boolean = true,
+    showDivider: Boolean = false,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Box(
+    // El título pequeño aparece suavemente cuando el título grande sale de la pantalla
+    val titleAlpha by animateFloatAsState(if (showTitle) 1f else 0f, tween(180), label = "navTitle")
+    val dividerAlpha by animateFloatAsState(if (showDivider) 1f else 0f, tween(180), label = "navDivider")
+    Column(
         Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
+    ) {
+    Box(
+        Modifier
+            .fillMaxWidth()
             .height(48.dp)
     ) {
         if (onBack != null) {
@@ -184,7 +361,8 @@ fun NavBar(
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier
                 .align(Alignment.Center)
-                .padding(horizontal = 96.dp),
+                .padding(horizontal = 96.dp)
+                .alpha(titleAlpha),
         )
         Row(
             Modifier
@@ -193,6 +371,12 @@ fun NavBar(
             verticalAlignment = Alignment.CenterVertically,
             content = actions,
         )
+    }
+    HorizontalDivider(
+        thickness = 0.5.dp,
+        color = MaterialTheme.colorScheme.outlineVariant,
+        modifier = Modifier.alpha(dividerAlpha),
+    )
     }
 }
 
@@ -257,13 +441,26 @@ fun SongRow(
             if (trackNumber != null) {
                 Box(Modifier.width(28.dp), contentAlignment = Alignment.CenterStart) {
                     if (isCurrent) {
-                        Icon(Icons.Rounded.GraphicEq, null, tint = colors.primary, modifier = Modifier.size(18.dp))
+                        EqualizerBars(LocalIsPlaying.current, colors.primary, Modifier.size(16.dp))
                     } else {
                         Text("$trackNumber", color = colors.onSurfaceVariant, fontSize = 15.sp)
                     }
                 }
             } else {
-                Artwork(song.art, Modifier.size(48.dp), corner = 6.dp)
+                Box(contentAlignment = Alignment.Center) {
+                    Artwork(song.art, Modifier.size(48.dp), corner = 6.dp, seed = song.album)
+                    if (isCurrent) {
+                        Box(
+                            Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.Black.copy(alpha = 0.38f)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            EqualizerBars(LocalIsPlaying.current, Color.White, Modifier.size(18.dp))
+                        }
+                    }
+                }
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -359,7 +556,7 @@ fun AlbumGridItem(album: Album, onClick: () -> Unit, modifier: Modifier = Modifi
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
     ) {
-        Artwork(album.art, Modifier.fillMaxWidth().aspectRatio(1f), corner = 8.dp)
+        Artwork(album.art, Modifier.fillMaxWidth().aspectRatio(1f), corner = 8.dp, seed = album.title)
         Spacer(Modifier.height(6.dp))
         Text(
             album.title,
@@ -385,12 +582,12 @@ fun AlbumGridItem(album: Album, onClick: () -> Unit, modifier: Modifier = Modifi
 fun PlaylistCover(playlist: Playlist, modifier: Modifier = Modifier, corner: Dp = 8.dp) {
     val cover = playlist.coverPath
     if (cover != null) {
-        Artwork(java.io.File(cover), modifier, corner = corner)
+        Artwork(java.io.File(cover), modifier, corner = corner, seed = playlist.name)
         return
     }
     val arts = remember(playlist.songs) { playlist.songs.map { it.art }.distinct().take(4) }
     if (arts.size < 4) {
-        Artwork(arts.firstOrNull(), modifier, corner = corner)
+        Artwork(arts.firstOrNull(), modifier, corner = corner, seed = playlist.name)
     } else {
         Column(modifier.clip(RoundedCornerShape(corner))) {
             Row(Modifier.weight(1f)) {

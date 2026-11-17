@@ -19,6 +19,12 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -69,8 +75,12 @@ fun LibraryHomeScreen(vm: MainViewModel, nav: NavController) {
     val recent = remember(lib.albums) {
         lib.albums.filter { it.songs.isNotEmpty() }.sortedByDescending { it.dateAdded }.take(10)
     }
+    val listState = rememberLazyListState()
+    val collapsed by rememberCollapsed(listState)
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(bottom = LocalBottomInset.current),
     ) {
         item {
@@ -109,6 +119,31 @@ fun LibraryHomeScreen(vm: MainViewModel, nav: NavController) {
                 }
             }
         }
+    }
+    // Barra superior que aparece con el título pequeño al desplazarte
+    AnimatedVisibility(visible = collapsed, enter = fadeIn(), exit = fadeOut()) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.97f))
+                .statusBarsPadding()
+        ) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(44.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "Biblioteca",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 17.sp,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+            HorizontalDivider(thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+        }
+    }
     }
 }
 
@@ -149,17 +184,21 @@ fun SongsScreen(vm: MainViewModel, nav: NavController, pickAlbumId: Long?, pickP
     val pickMode = pickAlbumId != null || pickPlaylistId != null
     var selection by remember { mutableStateOf(if (pickMode) emptySet<Long>() else null) }
     val sel = selection
+    val listState = rememberLazyListState()
+    val collapsed by rememberCollapsed(listState)
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             NavBar(
                 onBack = { nav.popBackStack() },
                 title = when {
-                    sel == null -> ""
+                    sel == null -> "Canciones"
                     sel.isEmpty() -> "Elige canciones"
                     else -> "${sel.size} seleccionadas"
                 },
                 backLabel = if (pickMode) "Cancelar" else "Biblioteca",
+                showTitle = sel != null || collapsed,
+                showDivider = collapsed,
             ) {
                 if (!pickMode) {
                     TextButton(onClick = { selection = if (sel == null) emptySet() else null }) {
@@ -169,6 +208,7 @@ fun SongsScreen(vm: MainViewModel, nav: NavController, pickAlbumId: Long?, pickP
             }
             LazyColumn(
                 Modifier.weight(1f),
+                state = listState,
                 contentPadding = PaddingValues(bottom = LocalBottomInset.current + if (sel != null) 72.dp else 0.dp),
             ) {
                 if (sel == null) {
@@ -271,8 +311,16 @@ private fun ActionButton(text: String, icon: ImageVector, modifier: Modifier, on
 @Composable
 fun AlbumsScreen(vm: MainViewModel, nav: NavController) {
     val lib by vm.library.collectAsStateWithLifecycle()
+    val gridState = rememberLazyGridState()
+    val collapsed by rememberCollapsed(gridState)
     Column(Modifier.fillMaxSize()) {
-        NavBar(onBack = { nav.popBackStack() }, backLabel = "Biblioteca") {
+        NavBar(
+            onBack = { nav.popBackStack() },
+            title = "Álbumes",
+            backLabel = "Biblioteca",
+            showTitle = collapsed,
+            showDivider = collapsed,
+        ) {
             IconButton(onClick = {
                 vm.pendingSongIds = emptyList()
                 nav.navigate("editAlbum/-1")
@@ -283,6 +331,7 @@ fun AlbumsScreen(vm: MainViewModel, nav: NavController) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
             modifier = Modifier.weight(1f),
+            state = gridState,
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = LocalBottomInset.current),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -300,9 +349,21 @@ fun AlbumsScreen(vm: MainViewModel, nav: NavController) {
 @Composable
 fun ArtistsScreen(vm: MainViewModel, nav: NavController) {
     val lib by vm.library.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val collapsed by rememberCollapsed(listState)
     Column(Modifier.fillMaxSize()) {
-        NavBar(onBack = { nav.popBackStack() }, backLabel = "Biblioteca")
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = LocalBottomInset.current)) {
+        NavBar(
+            onBack = { nav.popBackStack() },
+            title = "Artistas",
+            backLabel = "Biblioteca",
+            showTitle = collapsed,
+            showDivider = collapsed,
+        )
+        LazyColumn(
+            Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = LocalBottomInset.current),
+        ) {
             item { LargeTitle("Artistas") }
             items(lib.artists, key = { it.name }) { artist ->
                 Column(Modifier.clickable { nav.navigate("artist/${Uri.encode(artist.name)}") }) {
@@ -313,7 +374,7 @@ fun ArtistsScreen(vm: MainViewModel, nav: NavController) {
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Artwork(artist.art, Modifier.size(48.dp), shape = CircleShape)
+                        Artwork(artist.art, Modifier.size(48.dp), shape = CircleShape, seed = artist.name)
                         Spacer(Modifier.width(14.dp))
                         Text(
                             artist.name,
@@ -341,9 +402,21 @@ fun ArtistsScreen(vm: MainViewModel, nav: NavController) {
 @Composable
 fun PlaylistsScreen(vm: MainViewModel, nav: NavController) {
     val lib by vm.library.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val collapsed by rememberCollapsed(listState)
     Column(Modifier.fillMaxSize()) {
-        NavBar(onBack = { nav.popBackStack() }, backLabel = "Biblioteca")
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = LocalBottomInset.current)) {
+        NavBar(
+            onBack = { nav.popBackStack() },
+            title = "Playlists",
+            backLabel = "Biblioteca",
+            showTitle = collapsed,
+            showDivider = collapsed,
+        )
+        LazyColumn(
+            Modifier.weight(1f),
+            state = listState,
+            contentPadding = PaddingValues(bottom = LocalBottomInset.current),
+        ) {
             item { LargeTitle("Playlists") }
             item {
                 Row(

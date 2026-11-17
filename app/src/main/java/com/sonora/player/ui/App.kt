@@ -141,7 +141,7 @@ private fun MainContent(vm: MainViewModel) {
     SharedTransitionLayout(Modifier.fillMaxSize()) {
     val sharedScope = this
     Box(Modifier.fillMaxSize()) {
-        CompositionLocalProvider(LocalBottomInset provides bottomInset) {
+        CompositionLocalProvider(LocalBottomInset provides bottomInset, LocalIsPlaying provides state.isPlaying) {
             NavHost(
                 navController = nav,
                 startDestination = "library",
@@ -281,7 +281,7 @@ private fun MiniPlayer(
                     visibilityScope,
                 )
             }
-            Artwork(song?.art, sharedArt.size(48.dp), corner = 8.dp)
+            Artwork(song?.art, sharedArt.size(48.dp), corner = 8.dp, seed = song?.album)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -304,16 +304,16 @@ private fun MiniPlayer(
                 onToggle()
             }) {
                 Icon(
-                    if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    if (state.isPlaying) SonoraIcons.Pause else SonoraIcons.Play,
                     contentDescription = if (state.isPlaying) "Pausa" else "Reproducir",
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(26.dp),
                 )
             }
             IconButton(onClick = {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onNext()
             }) {
-                Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", modifier = Modifier.size(30.dp))
+                Icon(SonoraIcons.Next, contentDescription = "Siguiente", modifier = Modifier.size(26.dp))
             }
         }
     }

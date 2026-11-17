@@ -175,7 +175,7 @@ private fun SheetRow(art: Any?, title: String, subtitle: String, onClick: () -> 
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(art, Modifier.size(52.dp), corner = 6.dp)
+        Artwork(art, Modifier.size(52.dp), corner = 6.dp, seed = title)
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(title, fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
