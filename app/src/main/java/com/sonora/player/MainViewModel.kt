@@ -9,6 +9,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.sonora.player.data.Album
 import com.sonora.player.data.Library
+import com.sonora.player.data.LyricsResult
+import com.sonora.player.data.LyricsState
 import com.sonora.player.data.Song
 import com.sonora.player.playback.PlaybackStore
 import com.sonora.player.playback.PlayerController
@@ -21,6 +23,7 @@ import kotlinx.coroutines.withContext
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val repo = (app as SonoraApp).repository
+    private val lyricsRepo = (app as SonoraApp).lyrics
     val library: StateFlow<Library> = repo.library
     val player = PlayerController(app)
 
@@ -139,6 +142,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.removeFromPlaylist(id, songId) }
 
     fun deletePlaylist(id: Long) = viewModelScope.launch { repo.deletePlaylist(id) }
+
+    // ---------- Letras ----------
+
+    suspend fun lyricsFor(song: Song): LyricsState = lyricsRepo.load(song)
+
+    /** Busca letras en internet; lanza excepción si no hay conexión. */
+    suspend fun searchLyrics(query: String): List<LyricsResult> = lyricsRepo.search(query)
+
+    suspend fun chooseLyrics(songId: Long, result: LyricsResult) = lyricsRepo.choose(songId, result)
+
+    suspend fun saveLyricsText(songId: Long, text: String) = lyricsRepo.saveManual(songId, text)
+
+    suspend fun removeLyrics(songId: Long) = lyricsRepo.remove(songId)
+
+    suspend fun readLyricsFile(uri: Uri): String? = lyricsRepo.readTextFile(uri)
 
     override fun onCleared() {
         player.release()

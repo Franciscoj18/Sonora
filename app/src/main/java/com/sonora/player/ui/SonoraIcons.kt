@@ -135,6 +135,29 @@ object SonoraIcons {
         }
     }
 
+    /** Letra: burbuja de diálogo con dos líneas de texto. */
+    val Lyrics: ImageVector by lazy {
+        icon("Lyrics") {
+            line(1.8f) {
+                moveTo(6f, 4.5f)
+                lineTo(18f, 4.5f)
+                curveTo(19.4f, 4.5f, 20.5f, 5.6f, 20.5f, 7f)
+                lineTo(20.5f, 14.5f)
+                curveTo(20.5f, 15.9f, 19.4f, 17f, 18f, 17f)
+                lineTo(10.5f, 17f)
+                lineTo(6.5f, 20.2f)
+                lineTo(6.5f, 17f)
+                lineTo(6f, 17f)
+                curveTo(4.6f, 17f, 3.5f, 15.9f, 3.5f, 14.5f)
+                lineTo(3.5f, 7f)
+                curveTo(3.5f, 5.6f, 4.6f, 4.5f, 6f, 4.5f)
+                close()
+            }
+            line(1.8f) { moveTo(7.5f, 9f); lineTo(16.5f, 9f) }
+            line(1.8f) { moveTo(7.5f, 12.5f); lineTo(13f, 12.5f) }
+        }
+    }
+
     private fun ImageVector.Builder.repeatShape() {
         line {
             moveTo(4f, 11.5f)

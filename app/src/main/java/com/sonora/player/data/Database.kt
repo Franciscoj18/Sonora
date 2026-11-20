@@ -12,6 +12,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
 import androidx.room.Upsert
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "custom_albums")
@@ -54,6 +56,21 @@ data class PlaylistSongEntity(
     val playlistId: Long,
     val songId: Long,
     val position: Int,
+)
+
+/**
+ * Letra guardada para una canción. `source` dice de dónde salió:
+ * "lrclib" (internet), "file" (dentro del MP3), "user" (pegada o importada por ti)
+ * o "removed" (quitada a propósito: no se vuelve a buscar sola).
+ */
+@Entity(tableName = "lyrics")
+data class LyricsEntity(
+    @PrimaryKey val songId: Long,
+    val plain: String?,
+    val synced: String?,
+    val source: String,
+    val instrumental: Boolean,
+    val updatedAt: Long,
 )
 
 @Dao
@@ -133,6 +150,13 @@ interface MusicDao {
 
     @Query("DELETE FROM playlist_songs WHERE playlistId = :playlistId AND songId = :songId")
     suspend fun removeFromPlaylist(playlistId: Long, songId: Long)
+
+    // Letras
+    @Query("SELECT * FROM lyrics WHERE songId = :songId")
+    suspend fun lyrics(songId: Long): LyricsEntity?
+
+    @Upsert
+    suspend fun upsertLyrics(item: LyricsEntity)
 }
 
 @Database(
@@ -142,8 +166,9 @@ interface MusicDao {
         AlbumCoverEntity::class,
         PlaylistEntity::class,
         PlaylistSongEntity::class,
+        LyricsEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class SonoraDatabase : RoomDatabase() {
@@ -153,13 +178,25 @@ abstract class SonoraDatabase : RoomDatabase() {
         @Volatile
         private var instance: SonoraDatabase? = null
 
+        /** Agrega la tabla de letras sin borrar tus álbumes, playlists ni carátulas. */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `lyrics` (" +
+                        "`songId` INTEGER NOT NULL, `plain` TEXT, `synced` TEXT, " +
+                        "`source` TEXT NOT NULL, `instrumental` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`))"
+                )
+            }
+        }
+
         fun get(context: Context): SonoraDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     SonoraDatabase::class.java,
                     "sonora.db"
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }

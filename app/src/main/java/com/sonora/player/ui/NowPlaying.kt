@@ -269,6 +269,9 @@ fun NowPlayingScreen(
     val drag = remember { Animatable(0f) }
     val close by rememberUpdatedState(onClose)
     var showQueue by remember { mutableStateOf(false) }
+    var showLyrics by remember { mutableStateOf(false) }
+    val toggleQueue = { showQueue = !showQueue; if (showQueue) showLyrics = false }
+    val toggleLyrics = { showLyrics = !showLyrics; if (showLyrics) showQueue = false }
 
     // Deslizar hacia abajo para cerrar, como en el iPhone
     val dragToClose = Modifier.pointerInput(Unit) {
@@ -345,7 +348,7 @@ fun NowPlayingScreen(
                     ) {
                         SheetHandle(dragToClose, close)
                         ArtPanel(
-                            vm, lib, state, art, song?.album, showQueue, sharedScope, visibilityScope, dragToClose,
+                            vm, lib, state, art, song?.album, showQueue, showLyrics, song, sharedScope, visibilityScope, dragToClose,
                             Modifier
                                 .weight(1f)
                                 .fillMaxWidth(),
@@ -358,7 +361,7 @@ fun NowPlayingScreen(
                             .fillMaxHeight(),
                         verticalArrangement = Arrangement.Center,
                     ) {
-                        PlayerInfo(vm, song, state, showQueue, compact = true) { showQueue = !showQueue }
+                        PlayerInfo(vm, song, state, showQueue, showLyrics, compact = true, onToggleQueue = toggleQueue, onToggleLyrics = toggleLyrics)
                     }
                 }
             } else {
@@ -369,13 +372,13 @@ fun NowPlayingScreen(
                 ) {
                     SheetHandle(dragToClose, close)
                     ArtPanel(
-                        vm, lib, state, art, song?.album, showQueue, sharedScope, visibilityScope, dragToClose,
+                        vm, lib, state, art, song?.album, showQueue, showLyrics, song, sharedScope, visibilityScope, dragToClose,
                         Modifier
                             .weight(1f)
                             .fillMaxWidth(),
                     )
                     Spacer(Modifier.height(26.dp))
-                    PlayerInfo(vm, song, state, showQueue, compact = false) { showQueue = !showQueue }
+                    PlayerInfo(vm, song, state, showQueue, showLyrics, compact = false, onToggleQueue = toggleQueue, onToggleLyrics = toggleLyrics)
                     Spacer(Modifier.height(8.dp))
                 }
             }
@@ -416,6 +419,8 @@ private fun ArtPanel(
     art: Any?,
     seed: String?,
     showQueue: Boolean,
+    showLyrics: Boolean,
+    song: Song?,
     sharedScope: SharedTransitionScope,
     visibilityScope: AnimatedVisibilityScope,
     dragToClose: Modifier,
@@ -426,10 +431,12 @@ private fun ArtPanel(
     // Sombra con el color de la carátula
     val glow = rememberArtGlow(art)
     Box(
-        modifier.then(if (showQueue) Modifier else dragToClose),
+        modifier.then(if (showQueue || showLyrics) Modifier else dragToClose),
         contentAlignment = Alignment.Center,
     ) {
-        if (showQueue) {
+        if (showLyrics) {
+            LyricsPanel(vm, song, state)
+        } else if (showQueue) {
             QueuePanel(vm, lib, state)
         } else {
             val scale by animateFloatAsState(
@@ -506,15 +513,17 @@ private fun ArtPanel(
     }
 }
 
-/** Título, barra de progreso, controles y botón de la cola. */
+/** Título, barra de progreso, controles y botones de letra y cola. */
 @Composable
 private fun PlayerInfo(
     vm: MainViewModel,
     song: Song?,
     state: PlayerState,
     showQueue: Boolean,
+    showLyrics: Boolean,
     compact: Boolean,
     onToggleQueue: () -> Unit,
+    onToggleLyrics: () -> Unit,
 ) {
     Column {
         TitleRow(vm, song, state)
@@ -523,7 +532,18 @@ private fun PlayerInfo(
         Spacer(Modifier.height(if (compact) 4.dp else 10.dp))
         Controls(vm, state)
         Spacer(Modifier.height(if (compact) 4.dp else 18.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            IconButton(onClick = onToggleLyrics) {
+                Box(
+                    Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (showLyrics) Color.White.copy(alpha = 0.25f) else Color.Transparent),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(SonoraIcons.Lyrics, contentDescription = "Letra", tint = Color.White, modifier = Modifier.size(24.dp))
+                }
+            }
             IconButton(onClick = onToggleQueue) {
                 Box(
                     Modifier
